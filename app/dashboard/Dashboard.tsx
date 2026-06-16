@@ -37,6 +37,7 @@ export function Dashboard() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [annexFiles, setAnnexFiles] = useState<File[]>([]);
   const [signers, setSigners] = useState<SignerForm[]>([{ name: "", email: "" }]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,11 +72,13 @@ export function Dashboard() {
       fd.append("file", file);
       fd.append("title", title);
       fd.append("signers", JSON.stringify(signers));
+      for (const annex of annexFiles) fd.append("annexes", annex);
       const res = await fetch("/api/documents", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al crear el documento.");
       setTitle("");
       setFile(null);
+      setAnnexFiles([]);
       setSigners([{ name: "", email: "" }]);
       (document.getElementById("pdf-input") as HTMLInputElement | null)?.value &&
         ((document.getElementById("pdf-input") as HTMLInputElement).value = "");
@@ -124,6 +127,26 @@ export function Dashboard() {
               className="mt-1 w-full text-sm"
               required
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium">
+              Anexos <span className="text-slate-400 font-normal">(opcional, PDF)</span>
+            </label>
+            <input
+              id="annex-input"
+              type="file"
+              accept="application/pdf"
+              multiple
+              onChange={(e) => setAnnexFiles(Array.from(e.target.files ?? []))}
+              className="mt-1 w-full text-sm"
+            />
+            {annexFiles.length > 0 && (
+              <ul className="mt-1 space-y-0.5 text-xs text-slate-500">
+                {annexFiles.map((f, i) => (
+                  <li key={i}>📎 {f.name}</li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="space-y-2">
             <label className="block text-sm font-medium">Firmantes</label>

@@ -51,6 +51,20 @@ export async function embedSignature(
   return pdfDoc.save();
 }
 
+/**
+ * Fusiona múltiples PDFs en uno solo.
+ * El PDF principal va primero, los anexos se concatenan en orden.
+ */
+export async function mergePdfs(buffers: (Buffer | Uint8Array)[]): Promise<Uint8Array> {
+  const merged = await PDFDocument.create();
+  for (const buf of buffers) {
+    const doc = await PDFDocument.load(buf);
+    const pages = await merged.copyPages(doc, doc.getPageIndices());
+    pages.forEach((p) => merged.addPage(p));
+  }
+  return merged.save();
+}
+
 /** Posición por defecto de la firma (esquina inferior, última página). */
 export async function defaultPlacement(
   pdfBytes: Buffer | Uint8Array,

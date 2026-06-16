@@ -32,3 +32,4 @@ model Signer {
   evidence     Json? // ver sección 6 — Postgres soporta Json nativo
   document     Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
 }
+

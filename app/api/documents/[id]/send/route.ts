@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { sendSignatureRequest } from "@/lib/email";
 
 // POST /api/documents/:id/send — pasa el documento a SENT y devuelve los enlaces.
 export async function POST(
@@ -32,6 +33,18 @@ export async function POST(
     email: s.email,
     url: `${appUrl}/sign/${s.signToken}`,
   }));
+
+  // Enviar correo a cada firmante (errores no bloquean la respuesta)
+  await Promise.allSettled(
+    links.map((l) =>
+      sendSignatureRequest({
+        to: l.email,
+        signerName: l.name,
+        documentTitle: document.title,
+        signUrl: l.url,
+      }),
+    ),
+  );
 
   return NextResponse.json({ links });
 }

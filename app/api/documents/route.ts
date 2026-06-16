@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { prisma } from "@/lib/db";
 import { saveFile } from "@/lib/storage";
-import { isValidPdf } from "@/lib/pdf";
+import { isValidPdf, mergePdfs } from "@/lib/pdf";
 import { createDocumentInput, MAX_PDF_BYTES } from "@/lib/validation";
 
 // POST /api/documents — crear documento (multipart: file + signers JSON). Estado DRAFT.
@@ -48,8 +48,27 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Anexos opcionales — se fusionan al PDF principal antes de guardar
+  const annexFiles = form.getAll("annexes").filter((f): f is File => f instanceof File && f.size > 0);
+  const annexBuffers: Buffer[] = [];
+  for (const annex of annexFiles) {
+    if (annex.size > MAX_PDF_BYTES) {
+      return NextResponse.json({ error: `El anexo "${annex.name}" supera el límite de 10 MB.` }, { status: 400 });
+    }
+    const annexBytes = Buffer.from(await annex.arrayBuffer());
+    if (!isValidPdf(annexBytes)) {
+      return NextResponse.json({ error: `El anexo "${annex.name}" no es un PDF válido.` }, { status: 400 });
+    }
+    annexBuffers.push(annexBytes);
+  }
+
+  // Si hay anexos, fusionarlos con el PDF principal
+  const finalBytes = annexBuffers.length > 0
+    ? Buffer.from(await mergePdfs([bytes, ...annexBuffers]))
+    : bytes;
+
   const docId = nanoid();
-  const originalPath = await saveFile(`${docId}/original.pdf`, bytes);
+  const originalPath = await saveFile(`${docId}/original.pdf`, finalBytes);
 
   const document = await prisma.document.create({
     data: {
@@ -62,7 +81,7 @@ export async function POST(req: NextRequest) {
           name: s.name,
           email: s.email,
           order: s.order ?? i,
-          signToken: nanoid(24), // mínimo 21 chars, aleatorio
+          signToken: nanoid(24),
         })),
       },
     },
