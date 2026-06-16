@@ -4,12 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { SignaturePad, type SignaturePadHandle } from "@/components/SignaturePad";
 import { PdfViewer } from "@/components/PdfViewer";
 
+interface SignerStatus {
+  name: string;
+  status: string;
+  signedAt: string | null;
+  isMe: boolean;
+}
+
 interface SignInfo {
   signerName: string;
   documentTitle: string;
   documentStatus: string;
   alreadySigned: boolean;
   canSign: boolean;
+  signers: SignerStatus[];
 }
 
 export function SignForm({ token }: { token: string }) {
@@ -22,13 +30,25 @@ export function SignForm({ token }: { token: string }) {
   const padRef = useRef<SignaturePadHandle>(null);
 
   useEffect(() => {
-    fetch(`/api/sign/${token}`)
-      .then(async (r) => {
+    let interval: ReturnType<typeof setInterval>;
+
+    async function fetchInfo() {
+      try {
+        const r = await fetch(`/api/sign/${token}`);
         const data = await r.json();
         if (!r.ok) throw new Error(data.error ?? "Enlace inválido.");
         setInfo(data);
-      })
-      .catch((e) => setLoadError(e.message));
+        // Si está completado dejamos de hacer polling
+        if (data.documentStatus === "COMPLETED") clearInterval(interval);
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : "Error al cargar.");
+      }
+    }
+
+    fetchInfo();
+    // Polling cada 10 segundos mientras no esté completado
+    interval = setInterval(fetchInfo, 10_000);
+    return () => clearInterval(interval);
   }, [token]);
 
   async function submit() {
@@ -72,13 +92,47 @@ export function SignForm({ token }: { token: string }) {
     return <p className="text-center text-slate-500">Cargando…</p>;
   }
   if (done || info.alreadySigned) {
+    const completed = info.documentStatus === "COMPLETED";
     return (
-      <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
-        <h1 className="text-xl font-semibold text-green-800">¡Firma registrada!</h1>
-        <p className="mt-2 text-sm text-green-700">
-          Gracias, {info.signerName}. Tu firma de «{info.documentTitle}» quedó
-          guardada con su rastro de evidencia.
-        </p>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-green-200 bg-green-50 p-6">
+          <h1 className="text-xl font-semibold text-green-800">¡Firma registrada!</h1>
+          <p className="mt-1 text-sm text-green-700">
+            Gracias, {info.signerName}. Tu firma de «{info.documentTitle}» quedó
+            guardada con su rastro de evidencia.
+          </p>
+          {completed && (
+            <a
+              href={`/api/sign/${token}/signed-pdf`}
+              className="mt-4 inline-block rounded-lg bg-green-700 px-5 py-2.5 text-sm font-medium text-white hover:bg-green-600"
+            >
+              Descargar documento firmado
+            </a>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Estado de firmantes</h2>
+          <ul className="divide-y divide-slate-100">
+            {info.signers.map((s, i) => (
+              <li key={i} className="flex items-center justify-between py-2 text-sm">
+                <span className={s.isMe ? "font-medium" : ""}>
+                  {s.name} {s.isMe && <span className="text-slate-400">(tú)</span>}
+                </span>
+                <span className={s.status === "SIGNED" ? "text-green-600" : "text-amber-500"}>
+                  {s.status === "SIGNED"
+                    ? `Firmó${s.signedAt ? " · " + new Date(s.signedAt).toLocaleDateString("es-MX") : ""}`
+                    : "Pendiente"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {!completed && (
+            <p className="mt-3 text-xs text-slate-400">
+              El documento firmado estará disponible para descargar cuando todos hayan firmado.
+            </p>
+          )}
+        </div>
       </div>
     );
   }

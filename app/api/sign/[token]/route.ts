@@ -28,6 +28,12 @@ export async function GET(
     documentStatus: signer.document.status,
     alreadySigned: signer.status === "SIGNED",
     canSign: signer.document.status === "SENT" && signer.status === "PENDING",
+    signers: signer.document.signers.map((s) => ({
+      name: s.name,
+      status: s.status,
+      signedAt: s.signedAt,
+      isMe: s.id === signer.id,
+    })),
   });
 }
 
