@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooler (pgBouncer) — para la app
+  directUrl = env("DIRECT_URL") // conexión directa — para migraciones
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  title        String
+  originalPath String // PDF subido
+  signedPath   String? // PDF final firmado
+  status       String   @default("DRAFT") // DRAFT | SENT | COMPLETED | CANCELLED
+  finalHash    String? // SHA-256 del PDF firmado
+  createdAt    DateTime @default(now())
+  signers      Signer[]
+}
+
+model Signer {
+  id           String    @id @default(cuid())
+  documentId   String
+  name         String
+  email        String
+  order        Int       @default(0) // orden de firma (opcional)
+  status       String    @default("PENDING") // PENDING | SIGNED
+  signToken    String    @unique // enlace único de firma
+  signatureImg String? // PNG base64 o ruta del trazo
+  signedAt     DateTime?
+  evidence     Json? // ver sección 6 — Postgres soporta Json nativo
+  document     Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
