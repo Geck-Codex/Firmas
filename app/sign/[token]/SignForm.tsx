@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SignaturePad, type SignaturePadHandle } from "@/components/SignaturePad";
-import { PdfViewer } from "@/components/PdfViewer";
+import { PdfWithHighlight, type HighlightBox } from "@/components/PdfWithHighlight";
 
 interface SignerStatus {
   name: string;
@@ -27,7 +27,16 @@ export function SignForm({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [boxes, setBoxes] = useState<HighlightBox[]>([]);
   const padRef = useRef<SignaturePadHandle>(null);
+
+  // Dónde quedará la firma de este firmante, para mostrárselo antes de firmar.
+  useEffect(() => {
+    fetch(`/api/sign/${token}/placements`)
+      .then((r) => (r.ok ? r.json() : { boxes: [] }))
+      .then((d) => setBoxes(d.boxes ?? []))
+      .catch(() => setBoxes([]));
+  }, [token]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -153,7 +162,7 @@ export function SignForm({ token }: { token: string }) {
         </p>
       </header>
 
-      <PdfViewer src={`/api/sign/${token}/pdf`} title={info.documentTitle} />
+      <PdfWithHighlight src={`/api/sign/${token}/pdf`} boxes={boxes} />
 
       <div>
         <div className="mb-1 flex items-center justify-between">

@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendSignatureRequest } from "@/lib/email";
+import { requireUser } from "@/lib/auth";
+import { hasSignatureBox } from "@/lib/placement";
 
 // POST /api/documents/:id/send — pasa el documento a SENT y devuelve los enlaces.
 export async function POST(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
+
   const document = await prisma.document.findUnique({
     where: { id: params.id },
-    include: { signers: { orderBy: { order: "asc" } } },
+    include: {
+      signers: { orderBy: { order: "asc" }, include: { placements: true } },
+    },
   });
 
   if (!document) {
@@ -18,6 +25,20 @@ export async function POST(
   if (document.status !== "DRAFT") {
     return NextResponse.json(
       { error: "Solo se pueden enviar documentos en borrador." },
+      { status: 409 },
+    );
+  }
+
+  // No dejar salir un documento sin lugar de firma: es justo lo que hacía que
+  // las firmas cayeran en cualquier parte.
+  const sinColocar = document.signers.filter((s) => !hasSignatureBox(s.placements));
+  if (sinColocar.length > 0) {
+    return NextResponse.json(
+      {
+        error: `Falta colocar la firma de: ${sinColocar
+          .map((s) => s.name)
+          .join(", ")}.`,
+      },
       { status: 409 },
     );
   }

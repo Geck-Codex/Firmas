@@ -31,5 +31,24 @@ model Signer {
   signedAt     DateTime?
   evidence     Json? // ver sección 6 — Postgres soporta Json nativo
   document     Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  placements   SignaturePlacement[]
+}
+
+/// Dónde se dibuja la firma de un firmante sobre el PDF.
+/// Un firmante puede tener varios: la firma en el renglón final y una rúbrica
+/// por hoja. Coordenadas en fracciones 0..1 con origen ABAJO-IZQUIERDA, igual
+/// que pdf-lib, para no convertir nada al incrustar.
+model SignaturePlacement {
+  id       String @id @default(cuid())
+  signerId String
+  page     Int // índice 0-based sobre el PDF YA fusionado con anexos
+  x        Float // fracción del ancho de página
+  y        Float // fracción del alto, medida desde abajo
+  width    Float // fracción del ancho de página
+  height   Float // fracción del alto de página
+  kind     String @default("SIGNATURE") // SIGNATURE | INITIAL
+  signer   Signer @relation(fields: [signerId], references: [id], onDelete: Cascade)
+
+  @@index([signerId])
 }
 

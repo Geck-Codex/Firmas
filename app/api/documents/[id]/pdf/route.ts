@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { readFile } from "@/lib/storage";
 import { requireUser } from "@/lib/auth";
 
-// GET /api/documents/:id/download — descarga el PDF firmado (solo si COMPLETED).
+// GET /api/documents/:id/pdf — sirve el PDF vigente para el editor de colocación.
+// Expone el contrato completo, así que exige sesión del emisor.
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
@@ -18,21 +19,15 @@ export async function GET(
   if (!document) {
     return NextResponse.json({ error: "Documento no encontrado." }, { status: 404 });
   }
-  if (document.status !== "COMPLETED" || !document.signedPath) {
-    return NextResponse.json(
-      { error: "El documento aún no está finalizado." },
-      { status: 409 },
-    );
-  }
 
-  const bytes = await readFile(document.signedPath);
-  const safeTitle = document.title.replace(/[^a-z0-9-_]+/gi, "_").slice(0, 80);
+  const bytes = await readFile(document.signedPath ?? document.originalPath);
 
   return new NextResponse(bytes, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${safeTitle}_firmado.pdf"`,
+      "Content-Disposition": "inline",
+      "Cache-Control": "no-store",
     },
   });
 }

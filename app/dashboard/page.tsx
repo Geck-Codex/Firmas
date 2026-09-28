@@ -6,22 +6,29 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const supabase = createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-12">
-      <header className="mb-8 flex items-start justify-between">
+    <div className="mx-auto max-w-6xl px-6 py-10">
+      <header className="mb-10 flex flex-wrap items-end justify-between gap-4 border-b border-borde pb-5">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Panel del emisor</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Sube un PDF, define los firmantes y comparte sus enlaces de firma.
+          <h1 className="text-2xl font-semibold tracking-ajustado">Contratos</h1>
+          <p className="mt-1 text-sm text-tinta-suave">
+            Sube el PDF, marca dónde firma cada quien y comparte su enlace.
           </p>
         </div>
-        <LogoutButton />
+        <div className="flex items-center gap-4">
+          <span className="hidden font-mono text-xs text-tinta-tenue sm:inline">{user.email}</span>
+          <LogoutButton />
+        </div>
       </header>
-      <Dashboard />
-    </main>
+      <main>
+        <Dashboard />
+      </main>
+    </div>
   );
 }
 
@@ -30,7 +37,7 @@ function LogoutButton() {
     <form action="/api/auth/logout" method="POST">
       <button
         type="submit"
-        className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+        className="rounded-md border border-borde bg-panel px-3 py-1.5 text-sm text-tinta-suave transition-colors hover:text-tinta"
       >
         Cerrar sesión
       </button>

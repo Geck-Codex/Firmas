@@ -7,7 +7,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate && node scripts/copy-pdf-worker.mjs"
   },
   "dependencies": {
     "@prisma/client": "5.17.0",
@@ -16,6 +16,7 @@
     "nanoid": "5.0.7",
     "next": "14.2.5",
     "pdf-lib": "1.17.1",
+    "pdfjs-dist": "^4.6.82",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "resend": "^6.12.4",

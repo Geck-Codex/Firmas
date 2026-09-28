@@ -7,5 +7,21 @@
 }
 
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply bg-lienzo font-display text-tinta;
+}
+
+@layer base {
+  /* Foco visible en todo control, sin depender del outline del navegador. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-acento ring-offset-2 ring-offset-lienzo;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

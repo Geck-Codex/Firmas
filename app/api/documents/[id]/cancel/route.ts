@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 
 export async function POST(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
+
   const document = await prisma.document.findUnique({ where: { id: params.id } });
 
   if (!document) {

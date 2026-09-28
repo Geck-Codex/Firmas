@@ -4,9 +4,14 @@ import { prisma } from "@/lib/db";
 import { saveFile } from "@/lib/storage";
 import { isValidPdf, mergePdfs } from "@/lib/pdf";
 import { createDocumentInput, MAX_PDF_BYTES } from "@/lib/validation";
+import { requireUser } from "@/lib/auth";
+import { hasSignatureBox } from "@/lib/placement";
 
 // POST /api/documents — crear documento (multipart: file + signers JSON). Estado DRAFT.
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
+
   const form = await req.formData();
   const file = form.get("file");
   const title = form.get("title");
@@ -93,9 +98,26 @@ export async function POST(req: NextRequest) {
 
 // GET /api/documents — listar documentos del panel.
 export async function GET() {
+  const unauthorized = await requireUser();
+  if (unauthorized) return unauthorized;
+
   const documents = await prisma.document.findMany({
     orderBy: { createdAt: "desc" },
-    include: { signers: { orderBy: { order: "asc" } } },
+    include: {
+      signers: { orderBy: { order: "asc" }, include: { placements: true } },
+    },
   });
-  return NextResponse.json({ documents });
+
+  // El panel necesita saber si ya se colocaron las firmas para habilitar
+  // "Enviar", pero no las coordenadas en sí.
+  return NextResponse.json({
+    documents: documents.map((doc) => ({
+      ...doc,
+      placementsReady: doc.signers.every((s) => hasSignatureBox(s.placements)),
+      signers: doc.signers.map(({ placements, ...s }) => ({
+        ...s,
+        boxCount: placements.length,
+      })),
+    })),
+  });
 }

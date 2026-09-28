@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { readFile, saveFile } from "@/lib/storage";
-import { embedSignature, defaultPlacement, hashPdf } from "@/lib/pdf";
+import { embedSignatures, hashPdf } from "@/lib/pdf";
+import { resolvePlacements } from "@/lib/placement";
 import { dataUrlToPngBuffer } from "@/lib/signature";
 import { buildEvidence } from "@/lib/evidence";
 import { submitSignatureInput } from "@/lib/validation";
@@ -61,7 +62,10 @@ export async function POST(
 
   const signer = await prisma.signer.findUnique({
     where: { signToken: params.token },
-    include: { document: { include: { signers: { orderBy: { order: "asc" } } } } },
+    include: {
+      placements: true,
+      document: { include: { signers: { orderBy: { order: "asc" } } } },
+    },
   });
 
   if (!signer) {
@@ -101,44 +105,54 @@ export async function POST(
     );
   }
 
-  // Hash del PDF EN EL MOMENTO de firmar (parte de la evidencia).
-  const baseBytes = await currentPdf(doc);
-  const documentHashAtSigning = hashPdf(baseBytes);
+  try {
+    // Hash del PDF EN EL MOMENTO de firmar (parte de la evidencia).
+    const baseBytes = await currentPdf(doc);
+    const documentHashAtSigning = hashPdf(baseBytes);
 
-  const placement = await defaultPlacement(baseBytes, myIndex);
-  const newPdf = await embedSignature(baseBytes, pngBytes, placement);
+    // Dónde firma: los recuadros que el emisor colocó sobre el renglón. Los
+    // documentos anteriores al editor visual no tienen, y caen al respaldo.
+    const placements = await resolvePlacements(signer.placements, baseBytes, myIndex);
+    const newPdf = await embedSignatures(baseBytes, pngBytes, placements);
 
-  const workingKey = await saveFile(`${doc.id}/working.pdf`, newPdf);
-  const sigKey = await saveFile(`${doc.id}/sig-${signer.id}.png`, pngBytes);
-  const evidence = buildEvidence(req, documentHashAtSigning, parsed.data.consent);
+    const workingKey = await saveFile(`${doc.id}/working.pdf`, newPdf);
+    const sigKey = await saveFile(`${doc.id}/sig-${signer.id}.png`, pngBytes);
+    const evidence = buildEvidence(req, documentHashAtSigning, parsed.data.consent);
 
-  await prisma.signer.update({
-    where: { id: signer.id },
-    data: {
-      status: "SIGNED",
-      signatureImg: sigKey,
-      signedAt: new Date(evidence.signedAt),
-      evidence: evidence as unknown as Prisma.InputJsonValue, // Json nativo de Postgres
-    },
-  });
-
-  // ¿Todos firmaron? → finalizar, hashear y bloquear (COMPLETED).
-  const remaining = ordered.filter(
-    (s) => s.id !== signer.id && s.status !== "SIGNED",
-  ).length;
-
-  if (remaining === 0) {
-    const finalKey = await saveFile(`${doc.id}/signed.pdf`, newPdf);
-    const finalHash = hashPdf(newPdf);
-    await prisma.document.update({
-      where: { id: doc.id },
-      data: { signedPath: finalKey, finalHash, status: "COMPLETED" },
+    await prisma.signer.update({
+      where: { id: signer.id },
+      data: {
+        status: "SIGNED",
+        signatureImg: sigKey,
+        signedAt: new Date(evidence.signedAt),
+        evidence: evidence as unknown as Prisma.InputJsonValue,
+      },
     });
-  } else {
-    await prisma.document.update({
-      where: { id: doc.id },
-      data: { signedPath: workingKey },
-    });
+
+    // ¿Todos firmaron? → finalizar, hashear y bloquear (COMPLETED).
+    const remaining = ordered.filter(
+      (s) => s.id !== signer.id && s.status !== "SIGNED",
+    ).length;
+
+    if (remaining === 0) {
+      const finalKey = await saveFile(`${doc.id}/signed.pdf`, newPdf);
+      const finalHash = hashPdf(newPdf);
+      await prisma.document.update({
+        where: { id: doc.id },
+        data: { signedPath: finalKey, finalHash, status: "COMPLETED" },
+      });
+    } else {
+      await prisma.document.update({
+        where: { id: doc.id },
+        data: { signedPath: workingKey },
+      });
+    }
+  } catch (e) {
+    console.error("[POST /api/sign] Error al procesar firma:", e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Error interno al guardar la firma." },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ ok: true });

@@ -43,6 +43,11 @@ Next.js (App Router) + TypeScript — full-stack (UI + API routes).
 Tailwind CSS — estilos.
 signature_pad — captura de firma manuscrita en <canvas> (con el dedo/stylus).
 pdf-lib — incrustar la imagen de la firma en el PDF.
+pdfjs-dist — renderiza el PDF a <canvas> para poder dibujar recuadros encima.
+  Justificación: el emisor debe colocar la firma sobre el renglón real del
+  contrato, y el visor nativo (<object>) no permite superponer ni capturar
+  clics. Solo se carga en el cliente, con next/dynamic y ssr:false. Su worker
+  se copia a /public en cada install (scripts/copy-pdf-worker.mjs).
 Prisma + SQLite en desarrollo; PostgreSQL en producción.
 Almacenamiento de archivos: disco local en dev; S3-compatible (R2/S3) en prod.
 crypto nativo de Node — hash SHA-256 del PDF final.
@@ -76,19 +81,41 @@ Signer
   signedAt      DateTime?
   evidence      Json?    // ver sección 6
   document      Document @relation(...)
+  placements    SignaturePlacement[]
+
+SignaturePlacement    // dónde se dibuja la firma sobre el PDF
+  id            String  @id
+  signerId      String
+  page          Int     // 0-based, sobre el PDF YA fusionado con anexos
+  x, y          Float   // fracciones 0..1, origen ABAJO-IZQUIERDA (como pdf-lib)
+  width, height Float   // fracciones 0..1
+  kind          String  // SIGNATURE (firma) | INITIAL (rúbrica por hoja)
+  signer        Signer  @relation(...)
+
+Un firmante puede tener varios: la firma en el renglón final y una rúbrica por
+hoja. Las coordenadas usan el MISMO sistema que pdf-lib para no convertir nada
+al incrustar; la conversión desde el canvas del editor (origen arriba-izquierda)
+se hace una sola vez, en el cliente.
 
 5. Flujos principales
 
 
 Crear documento: el emisor sube un PDF y define los firmantes (nombre + correo).
 Estado DRAFT.
+Colocar firmas: el emisor abre el editor y arrastra un recuadro sobre el
+renglón donde firma cada persona (opcionalmente rúbrica en cada hoja). Se hace
+DESPUÉS de crear, porque los anexos se fusionan en el servidor y la numeración
+de páginas definitiva solo existe a partir de ese momento. No se puede enviar
+un documento sin colocar: la firma caería en cualquier parte.
 Enviar: se genera un signToken por firmante y un enlace único
 /sign/{signToken}. Estado SENT. (Envío de correo: opcional al inicio; puedes
 solo mostrar/copiar el enlace.)
 Firmar: el firmante abre su enlace, ve el PDF, dibuja su firma en el canvas
 (signature_pad), confirma, y se registra su evidencia.
-Incrustar: cuando un firmante firma, se renderiza su firma (PNG) en la posición
-acordada del PDF con pdf-lib.
+Incrustar: cuando un firmante firma, su PNG se dibuja en TODOS sus recuadros
+con pdf-lib, ajustado dentro de cada uno sin deformarse. Los documentos creados
+antes del editor visual no tienen recuadros y caen a una posición de respaldo
+(lib/placement.ts).
 Finalizar: cuando todos firmaron, se genera el PDF final, se calcula su
 SHA-256, se guarda en finalHash y el documento pasa a COMPLETED.
 Descargar: el emisor descarga el PDF firmado + un resumen de evidencia.
@@ -118,15 +145,20 @@ Este rastro es lo que da fuerza probatoria a una firma simple. No lo omitas.
   /sign/[token]       # página pública de firma (canvas)
   /dashboard          # panel del emisor
 /lib
-  pdf.ts              # incrustar firma, hashear PDF (pdf-lib + crypto)
+  pdf.ts              # incrustar firmas, hashear PDF (pdf-lib + crypto)
+  placement.ts        # resolver dónde firma cada quien (+ respaldo)
+  auth.ts             # requireUser() para las rutas de /api/documents
   signature.ts        # utilidades de signature_pad → PNG
   evidence.ts         # construir el objeto de evidencia
   db.ts               # cliente Prisma
 /prisma
   schema.prisma
 /components
-  SignaturePad.tsx    # wrapper de signature_pad
-  PdfViewer.tsx
+  SignaturePad.tsx     # wrapper de signature_pad
+  PdfViewer.tsx        # visor simple (<object> nativo)
+  PdfCanvas.tsx        # una página a <canvas> + capa superpuesta (pdf.js)
+  PlacementEditor.tsx  # editor de arrastre del emisor
+  PdfWithHighlight.tsx # le marca al firmante dónde quedará su firma
 
 8. Comandos
 
@@ -157,6 +189,10 @@ no exponer IDs internos en las URLs públicas.
 El hash del PDF se calcula en el servidor, nunca confiar en el cliente.
 Nunca registrar el PDF completo ni datos personales en logs.
 Validar que un firmante solo pueda firmar su propio documento (token → signer).
+El middleware solo protege PÁGINAS (/dashboard, /login), no las rutas de API.
+Toda ruta bajo /api/documents debe llamar a requireUser() por su cuenta: sirven
+y modifican contratos completos. Las rutas /api/sign/[token] se autorizan por
+el token y solo exponen datos del propio firmante.
 Tras COMPLETED, el PDF firmado es inmutable; cualquier cambio invalida el hash.
 Sanitizar el PDF subido (verificar que sea PDF real, límite de tamaño).
 

@@ -22,43 +22,71 @@ export function LoginForm() {
       router.push("/dashboard");
       router.refresh();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Credenciales incorrectas.");
+      // El mensaje de Supabase viene en inglés; aquí se dice qué hacer.
+      setError(
+        e instanceof Error && e.message.includes("Invalid login")
+          ? "Ese correo y contraseña no coinciden. Revísalos e intenta otra vez."
+          : e instanceof Error
+            ? e.message
+            : "No se pudo entrar. Intenta de nuevo.",
+      );
     } finally {
       setBusy(false);
     }
   }
 
+  const campo =
+    "mt-1.5 w-full rounded-md border border-borde2 bg-panel px-3 py-2 text-sm placeholder:text-tinta-tenue focus:border-acento";
+
   return (
     <form onSubmit={submit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700">Correo</label>
+        <label htmlFor="correo" className="block text-sm font-medium">
+          Correo
+        </label>
         <input
+          id="correo"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="email"
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
+          autoFocus
+          placeholder="tu@correo.com"
+          className={`${campo} font-mono`}
         />
       </div>
+
       <div>
-        <label className="block text-sm font-medium text-slate-700">Contraseña</label>
+        <label htmlFor="clave" className="block text-sm font-medium">
+          Contraseña
+        </label>
         <input
+          id="clave"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
           autoComplete="current-password"
-          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className={campo}
         />
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {error && (
+        <p
+          role="alert"
+          className="rounded-md bg-estado-espera/10 px-3 py-2 text-sm leading-relaxed text-estado-espera"
+        >
+          {error}
+        </p>
+      )}
+
       <button
         type="submit"
         disabled={busy}
-        className="w-full rounded-lg bg-slate-900 px-5 py-2.5 font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        className="w-full rounded-md bg-tinta px-5 py-2.5 text-sm font-medium text-panel transition-colors hover:bg-acento disabled:opacity-50"
       >
-        {busy ? "Entrando…" : "Entrar"}
+        {busy ? "Entrando" : "Entrar"}
       </button>
     </form>
   );

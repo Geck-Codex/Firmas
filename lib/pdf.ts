@@ -13,40 +13,66 @@ export function isValidPdf(buf: Buffer): boolean {
   return buf.length > 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-";
 }
 
+/**
+ * Recuadro donde se dibuja una firma.
+ *
+ * Todas las medidas son fracciones 0..1 de la página, con origen en la esquina
+ * ABAJO-IZQUIERDA — el mismo sistema que usa pdf-lib, para no convertir nada al
+ * dibujar. La conversión desde el canvas del editor (que tiene el origen
+ * arriba-izquierda) se hace una sola vez, en el cliente.
+ */
 export interface SignaturePlacement {
   page: number; // índice de página (0-based)
-  x: number; // fracción 0..1 del ancho desde la izquierda
-  y: number; // fracción 0..1 de la altura desde abajo
-  widthFrac: number; // ancho de la firma como fracción del ancho de página
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Número de páginas del PDF — para validar que un recuadro cae en una página real. */
+export async function pdfPageCount(pdfBytes: Buffer | Uint8Array): Promise<number> {
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  return pdfDoc.getPageCount();
 }
 
 /**
- * Incrusta una imagen PNG de firma en el PDF en la posición indicada.
+ * Incrusta el PNG de una firma en todos los recuadros indicados (la firma del
+ * renglón final y las rúbricas de cada hoja son el mismo trazo repetido).
+ *
+ * El PNG se ajusta DENTRO del recuadro conservando su proporción y centrado,
+ * para que la firma no se deforme ni se desborde del renglón.
+ *
  * Devuelve los bytes del nuevo PDF. No muta el original.
  */
-export async function embedSignature(
+export async function embedSignatures(
   pdfBytes: Buffer | Uint8Array,
   pngBytes: Buffer | Uint8Array,
-  placement: SignaturePlacement,
+  placements: SignaturePlacement[],
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const png = await pdfDoc.embedPng(pngBytes);
-
   const pages = pdfDoc.getPages();
-  const pageIndex = Math.min(Math.max(placement.page, 0), pages.length - 1);
-  const page = pages[pageIndex];
-  const { width, height } = page.getSize();
 
-  const drawWidth = width * placement.widthFrac;
-  const scale = drawWidth / png.width;
-  const drawHeight = png.height * scale;
+  for (const placement of placements) {
+    const pageIndex = Math.min(Math.max(placement.page, 0), pages.length - 1);
+    const page = pages[pageIndex];
+    const { width: pw, height: ph } = page.getSize();
 
-  page.drawImage(png, {
-    x: placement.x * width,
-    y: placement.y * height,
-    width: drawWidth,
-    height: drawHeight,
-  });
+    const boxWidth = placement.width * pw;
+    const boxHeight = placement.height * ph;
+
+    // "contain": la firma cabe entera en el recuadro, sin deformarse.
+    const scale = Math.min(boxWidth / png.width, boxHeight / png.height);
+    const drawWidth = png.width * scale;
+    const drawHeight = png.height * scale;
+
+    page.drawImage(png, {
+      x: placement.x * pw + (boxWidth - drawWidth) / 2,
+      y: placement.y * ph + (boxHeight - drawHeight) / 2,
+      width: drawWidth,
+      height: drawHeight,
+    });
+  }
 
   return pdfDoc.save();
 }
@@ -65,18 +91,25 @@ export async function mergePdfs(buffers: (Buffer | Uint8Array)[]): Promise<Uint8
   return merged.save();
 }
 
-/** Posición por defecto de la firma (esquina inferior, última página). */
-export async function defaultPlacement(
+/**
+ * Posición de respaldo: esquina inferior de la última página, apilando por
+ * firmante.
+ *
+ * Solo se usa con documentos creados ANTES de que existiera la colocación
+ * visual, que no tienen recuadros guardados. Para documentos nuevos el emisor
+ * coloca la firma sobre el renglón real — ver lib/placement.ts.
+ */
+export async function fallbackPlacement(
   pdfBytes: Buffer | Uint8Array,
   signerIndex: number,
 ): Promise<SignaturePlacement> {
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const lastPage = pdfDoc.getPageCount() - 1;
-  // Apila firmas verticalmente para evitar solaparlas.
   return {
     page: lastPage,
     x: 0.1,
     y: 0.08 + signerIndex * 0.12,
-    widthFrac: 0.3,
+    width: 0.3,
+    height: 0.1,
   };
 }
